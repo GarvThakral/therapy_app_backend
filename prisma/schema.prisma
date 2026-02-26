@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Plan {
+  FREE
+  PRO
+}
+
+enum EntryType {
+  trigger
+  event
+  thought
+  win
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  plan         Plan     @default(FREE)
+  logs         LogEntry[]
+  sessions     TherapySession[]
+  homework     HomeworkItem[]
+  profile      UserProfile?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model LogEntry {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  text        String
+  type        EntryType
+  intensity   Int
+  addedToPrep Boolean   @default(false)
+  prepNote    String?
+  checkedOff  Boolean   @default(false)
+  isArchived  Boolean   @default(false)
+  archivedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([userId, isArchived, createdAt])
+}
+
+model UserProfile {
+  id                     String   @id @default(cuid())
+  userId                 String   @unique
+  user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName            String   @default("Alex")
+  therapistName          String?
+  sessionFrequency       String   @default("weekly")
+  sessionDay             String   @default("Thursday")
+  sessionTime            String   @default("10:00")
+  nextSessionDate        DateTime?
+  preSessionReminder     Int      @default(2)
+  postSessionReminder    Int      @default(1)
+  enablePreReminder      Boolean  @default(true)
+  enablePostReminder     Boolean  @default(true)
+  enableHomeworkReminder Boolean  @default(true)
+  enableWeeklyNudge      Boolean  @default(false)
+  theme                  String   @default("dark")
+  fontSize               String   @default("standard")
+  aiSuggestions          Boolean  @default(false)
+  onboarded              Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+}
+
+model TherapySession {
+  id           String         @id @default(cuid())
+  userId       String
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  number       Int
+  date         DateTime
+  topics       String[]
+  whatStoodOut String
+  prepItems    String[]
+  postMood     Int
+  moodWord     String?
+  completed    Boolean        @default(true)
+  homework     HomeworkItem[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([userId, date])
+  @@unique([userId, number])
+}
+
+model HomeworkItem {
+  id            String         @id @default(cuid())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId     String?
+  session       TherapySession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  text          String
+  sessionDate   DateTime
+  dueDate       DateTime?
+  completed     Boolean        @default(false)
+  completedDate DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([userId, completed, sessionDate])
+  @@index([sessionId])
+}
