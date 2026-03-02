@@ -1,10 +1,10 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { parseBearerToken, verifyToken } from "../../lib/auth";
-import { applyCors, handleOptions } from "../../lib/http";
-import { prisma } from "../../lib/prisma";
-import { applyRateLimit } from "../../lib/rate-limit";
-import { toPublicUser } from "../../lib/users";
+import { parseBearerToken, verifyToken } from "../../lib/auth.js";
+import { applyCors, handleOptions } from "../../lib/http.js";
+import { prisma } from "../../lib/prisma.js";
+import { applyRateLimit } from "../../lib/rate-limit.js";
+import { toPublicUser } from "../../lib/users.js";
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;

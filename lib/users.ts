@@ -1,6 +1,6 @@
 import type { User } from "@prisma/client";
 
-import type { PublicUser } from "./plans";
+import type { PublicUser } from "./plans.js";
 
 export function toPublicUser(user: User): PublicUser {
   return {

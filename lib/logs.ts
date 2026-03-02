@@ -1,6 +1,6 @@
 import type { LogEntry } from "@prisma/client";
 
-import { prisma } from "./prisma";
+import { prisma } from "./prisma.js";
 
 const ARCHIVE_AFTER_DAYS = 14;
 

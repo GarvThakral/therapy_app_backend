@@ -1,11 +1,11 @@
 import type { EntryType } from "@prisma/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { applyCors, handleOptions } from "../../lib/http";
-import { archiveOldLogs, serializeLogEntry } from "../../lib/logs";
-import { prisma } from "../../lib/prisma";
-import { applyRateLimit } from "../../lib/rate-limit";
-import { requireUser } from "../../lib/require-user";
+import { applyCors, handleOptions } from "../../lib/http.js";
+import { archiveOldLogs, serializeLogEntry } from "../../lib/logs.js";
+import { prisma } from "../../lib/prisma.js";
+import { applyRateLimit } from "../../lib/rate-limit.js";
+import { requireUser } from "../../lib/require-user.js";
 
 interface CreateLogBody {
   text?: string;

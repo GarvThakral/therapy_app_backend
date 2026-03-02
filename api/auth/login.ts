@@ -1,11 +1,11 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { signToken } from "../../lib/auth";
-import { applyCors, handleOptions } from "../../lib/http";
-import { verifyPassword } from "../../lib/password";
-import { prisma } from "../../lib/prisma";
-import { applyRateLimit } from "../../lib/rate-limit";
-import { toPublicUser } from "../../lib/users";
+import { signToken } from "../../lib/auth.js";
+import { applyCors, handleOptions } from "../../lib/http.js";
+import { verifyPassword } from "../../lib/password.js";
+import { prisma } from "../../lib/prisma.js";
+import { applyRateLimit } from "../../lib/rate-limit.js";
+import { toPublicUser } from "../../lib/users.js";
 
 interface LoginBody {
   email?: string;

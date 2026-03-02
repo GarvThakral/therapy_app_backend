@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { parseBearerToken, verifyToken } from "./auth";
-import { prisma } from "./prisma";
+import { parseBearerToken, verifyToken } from "./auth.js";
+import { prisma } from "./prisma.js";
 
 export async function requireUser(req: VercelRequest, res: VercelResponse) {
   const token = parseBearerToken(req);

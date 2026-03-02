@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import type { VercelRequest } from "@vercel/node";
 
-import type { PublicUser } from "./plans";
+import type { PublicUser } from "./plans.js";
 
 const TOKEN_TTL = "7d";
 
