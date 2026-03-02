@@ -8,7 +8,6 @@ import loginHandler from "./api/auth/login";
 import meHandler from "./api/auth/me";
 import signupHandler from "./api/auth/signup";
 import fakePaymentHandler from "./api/billing/fake-payment";
-import accountHandler from "./api/account/index";
 import profileHandler from "./api/profile/index";
 import logHandler from "./api/logs/index";
 import logItemHandler from "./api/logs/[id]";
@@ -16,7 +15,6 @@ import sessionsHandler from "./api/sessions/index";
 import sessionItemHandler from "./api/sessions/[id]";
 import homeworkHandler from "./api/homework/index";
 import homeworkItemHandler from "./api/homework/[id]";
-import usersCountHandler from "./api/users/count";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -50,7 +48,6 @@ function wrap(handler: (req: any, res: any) => Promise<any> | any) {
 }
 
 app.get("/api/health", wrap(healthHandler));
-app.get("/api/users/count", wrap(usersCountHandler));
 
 app.options("/api/auth/signup", wrap(signupHandler));
 app.post("/api/auth/signup", wrap(signupHandler));
@@ -64,12 +61,10 @@ app.get("/api/auth/me", wrap(meHandler));
 app.options("/api/billing/fake-payment", wrap(fakePaymentHandler));
 app.post("/api/billing/fake-payment", wrap(fakePaymentHandler));
 
-app.options("/api/account", wrap(accountHandler));
-app.delete("/api/account", wrap(accountHandler));
-
 app.options("/api/profile", wrap(profileHandler));
 app.get("/api/profile", wrap(profileHandler));
 app.put("/api/profile", wrap(profileHandler));
+app.delete("/api/profile", wrap(profileHandler));
 
 app.options("/api/logs", wrap(logHandler));
 app.get("/api/logs", wrap(logHandler));

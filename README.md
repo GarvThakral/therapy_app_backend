@@ -30,7 +30,6 @@ npm run dev
 
 Local endpoints:
 - `GET /api/health`
-- `GET /api/users/count`
 - `POST /api/auth/signup`
 - `POST /api/auth/login`
 - `GET /api/auth/me`
@@ -41,7 +40,7 @@ Local endpoints:
 - `DELETE /api/logs/:id`
 - `GET /api/profile`
 - `PUT /api/profile`
-- `DELETE /api/account`
+- `DELETE /api/profile`
 - `GET /api/sessions`
 - `POST /api/sessions`
 - `PATCH /api/sessions/:id`

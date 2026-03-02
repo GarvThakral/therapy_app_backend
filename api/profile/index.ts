@@ -103,6 +103,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  res.setHeader("Allow", "GET, PUT, OPTIONS");
+  if (req.method === "DELETE") {
+    try {
+      await prisma.user.delete({ where: { id: user.id } });
+      return res.status(204).end();
+    } catch (error) {
+      return res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to delete account",
+      });
+    }
+  }
+
+  res.setHeader("Allow", "GET, PUT, DELETE, OPTIONS");
   return res.status(405).json({ error: "Method Not Allowed" });
 }
