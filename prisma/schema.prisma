@@ -19,18 +19,29 @@ enum EntryType {
   win
 }
 
+enum CommunityReportStatus {
+  OPEN
+  REVIEWED
+  DISMISSED
+}
+
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String?
-  passwordHash String
-  plan         Plan     @default(FREE)
-  logs         LogEntry[]
-  sessions     TherapySession[]
-  homework     HomeworkItem[]
-  profile      UserProfile?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                   String                @id @default(cuid())
+  email                String                @unique
+  name                 String?
+  passwordHash         String
+  plan                 Plan                  @default(FREE)
+  logs                 LogEntry[]
+  sessions             TherapySession[]
+  homework             HomeworkItem[]
+  profile              UserProfile?
+  communityPosts       CommunityPost[]
+  communityComments    CommunityComment[]
+  communityPostLikes   CommunityPostLike[]
+  communityCommentLikes CommunityCommentLike[]
+  communityReports     CommunityReport[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 }
 
 model LogEntry {
@@ -82,6 +93,7 @@ model TherapySession {
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   number       Int
   date         DateTime
+  endDate      DateTime?
   topics       String[]
   whatStoodOut String
   prepItems    String[]
@@ -93,6 +105,7 @@ model TherapySession {
   updatedAt    DateTime       @updatedAt
 
   @@index([userId, date])
+  @@index([userId, endDate, date])
   @@unique([userId, number])
 }
 
@@ -112,4 +125,89 @@ model HomeworkItem {
 
   @@index([userId, completed, sessionDate])
   @@index([sessionId])
+}
+
+model CommunityPost {
+  id        String              @id @default(cuid())
+  userId    String
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String
+  tag       String
+  isHidden  Boolean             @default(false)
+  hiddenAt  DateTime?
+  hiddenReason String?
+  comments  CommunityComment[]
+  likes     CommunityPostLike[]
+  reports   CommunityReport[]
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([tag, createdAt])
+  @@index([isHidden, createdAt])
+}
+
+model CommunityComment {
+  id        String               @id @default(cuid())
+  postId    String
+  post      CommunityPost        @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String
+  isHidden  Boolean              @default(false)
+  hiddenAt  DateTime?
+  hiddenReason String?
+  likes     CommunityCommentLike[]
+  reports   CommunityReport[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([createdAt])
+  @@index([postId, createdAt])
+  @@index([userId, createdAt])
+  @@index([isHidden, createdAt])
+}
+
+model CommunityPostLike {
+  userId    String
+  postId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
+
+  @@id([userId, postId])
+  @@index([postId])
+}
+
+model CommunityCommentLike {
+  userId    String
+  commentId String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  comment   CommunityComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+
+  @@id([userId, commentId])
+  @@index([commentId])
+}
+
+model CommunityReport {
+  id         String                @id @default(cuid())
+  reporterId String
+  reporter   User                  @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  postId     String?
+  post       CommunityPost?        @relation(fields: [postId], references: [id], onDelete: Cascade)
+  commentId  String?
+  comment    CommunityComment?     @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  reason     String
+  details    String?
+  status     CommunityReportStatus @default(OPEN)
+  createdAt  DateTime              @default(now())
+  updatedAt  DateTime              @updatedAt
+
+  @@index([reporterId, createdAt])
+  @@index([postId, createdAt])
+  @@index([commentId, createdAt])
+  @@index([status, createdAt])
 }

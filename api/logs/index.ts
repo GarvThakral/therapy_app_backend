@@ -1,6 +1,7 @@
 import type { EntryType } from "@prisma/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+import { handleCommunityRequest, type CommunityResource } from "../../lib/community.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { archiveOldLogs, serializeLogEntry } from "../../lib/logs.js";
 import { prisma } from "../../lib/prisma.js";
@@ -22,6 +23,14 @@ function parseView(view: unknown): "active" | "archive" | "all" {
   return "active";
 }
 
+function parseResource(value: unknown): "logs" | CommunityResource {
+  if (value === "community") return "community";
+  if (value === "community-comments") return "community-comments";
+  if (value === "community-likes") return "community-likes";
+  if (value === "community-reports") return "community-reports";
+  return "logs";
+}
+
 const ALLOWED_TYPES: EntryType[] = ["trigger", "event", "thought", "win"];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -32,6 +41,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const user = await requireUser(req, res);
   if (!user) return;
+
+  const resource = parseResource(req.query.resource);
+  if (resource !== "logs") {
+    return handleCommunityRequest(req, res, user, resource);
+  }
 
   if (req.method === "GET") {
     const view = parseView(req.query.view);

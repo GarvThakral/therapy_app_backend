@@ -5,6 +5,25 @@ import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
 import { requireUser } from "../../lib/require-user.js";
 
+function serializeSession(session: Awaited<ReturnType<typeof prisma.therapySession.findFirst>>) {
+  if (!session) return null;
+  return {
+    id: session.id,
+    date: session.date,
+    endDate: session.endDate,
+    number: session.number,
+    topics: session.topics,
+    whatStoodOut: session.whatStoodOut,
+    prepItems: session.prepItems,
+    postMood: session.postMood,
+    moodWord: session.moodWord,
+    completed: session.completed,
+    isCurrent: session.endDate === null,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+  };
+}
+
 function getId(req: VercelRequest) {
   const value = req.query.id;
   if (Array.isArray(value)) return value[0];
@@ -36,6 +55,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (Number.isNaN(parsed.getTime())) return res.status(400).json({ error: "Invalid date" });
       data.date = parsed;
     }
+    if (typeof body.endDate === "string") {
+      const parsed = new Date(body.endDate);
+      if (Number.isNaN(parsed.getTime())) return res.status(400).json({ error: "Invalid endDate" });
+      data.endDate = parsed;
+    }
+    if (body.endDate === null) data.endDate = null;
     if (Array.isArray(body.topics)) data.topics = body.topics.filter(Boolean);
     if (Array.isArray(body.prepItems)) data.prepItems = body.prepItems.filter(Boolean);
     if (typeof body.whatStoodOut === "string") data.whatStoodOut = body.whatStoodOut.trim();
@@ -48,7 +73,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         where: { id: existing.id },
         data,
       });
-      return res.status(200).json({ session: updated });
+      return res.status(200).json({ session: serializeSession(updated) });
     } catch (error) {
       return res.status(500).json({
         error: error instanceof Error ? error.message : "Failed to update session",

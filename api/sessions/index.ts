@@ -6,6 +6,8 @@ import { applyRateLimit } from "../../lib/rate-limit.js";
 import { requireUser } from "../../lib/require-user.js";
 
 interface CreateSessionBody {
+  action?: "start" | "save";
+  sessionId?: string;
   date?: string;
   topics?: string[];
   whatStoodOut?: string;
@@ -24,6 +26,7 @@ function serializeSession(session: Awaited<ReturnType<typeof prisma.therapySessi
   return {
     id: session.id,
     date: session.date,
+    endDate: session.endDate,
     number: session.number,
     topics: session.topics,
     whatStoodOut: session.whatStoodOut,
@@ -31,6 +34,7 @@ function serializeSession(session: Awaited<ReturnType<typeof prisma.therapySessi
     postMood: session.postMood,
     moodWord: session.moodWord,
     completed: session.completed,
+    isCurrent: session.endDate === null,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
   };
@@ -73,6 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: "Invalid session date" });
     }
 
+    const action = body.action ?? "save";
     const topics = Array.isArray(body.topics) ? body.topics.filter(Boolean) : [];
     const prepItems = Array.isArray(body.prepItems) ? body.prepItems.filter(Boolean) : [];
     const whatStoodOut = body.whatStoodOut?.trim() || "";
@@ -80,7 +85,96 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const moodWord = body.moodWord?.trim() || null;
     const completed = body.completed ?? true;
 
+    if (action === "start") {
+      try {
+        const session = await prisma.$transaction(async tx => {
+          await tx.therapySession.updateMany({
+            where: {
+              userId: user.id,
+              endDate: null,
+              date: { lt: date },
+            },
+            data: {
+              endDate: date,
+              completed: true,
+            },
+          });
+
+          const aggregate = await tx.therapySession.aggregate({
+            where: { userId: user.id },
+            _max: { number: true },
+          });
+          const nextNumber = (aggregate._max.number ?? 0) + 1;
+
+          return tx.therapySession.create({
+            data: {
+              userId: user.id,
+              number: nextNumber,
+              date,
+              endDate: null,
+              topics: [],
+              whatStoodOut: "",
+              prepItems: [],
+              postMood: 5,
+              moodWord: null,
+              completed: false,
+            },
+          });
+        });
+
+        return res.status(201).json({
+          session: serializeSession(session),
+          homeworkItems: [],
+          started: true,
+        });
+      } catch (error) {
+        return res.status(500).json({
+          error: error instanceof Error ? error.message : "Failed to start session",
+        });
+      }
+    }
+
     try {
+      if (body.sessionId) {
+        const existing = await prisma.therapySession.findFirst({
+          where: { id: body.sessionId, userId: user.id },
+        });
+        if (!existing) return res.status(404).json({ error: "Session not found" });
+
+        const updatedSession = await prisma.therapySession.update({
+          where: { id: existing.id },
+          data: {
+            topics,
+            whatStoodOut,
+            prepItems,
+            postMood,
+            moodWord,
+            completed,
+          },
+        });
+
+        const createdHomework = await prisma.$transaction(
+          (body.homeworkItems ?? [])
+            .filter(item => item.text?.trim())
+            .map(item =>
+              prisma.homeworkItem.create({
+                data: {
+                  userId: user.id,
+                  sessionId: existing.id,
+                  text: item.text!.trim(),
+                  sessionDate: existing.date,
+                  dueDate: item.dueDate ? new Date(item.dueDate) : null,
+                },
+              }),
+            ),
+        );
+
+        return res.status(200).json({
+          session: serializeSession(updatedSession),
+          homeworkItems: createdHomework,
+        });
+      }
+
       const aggregate = await prisma.therapySession.aggregate({
         where: { userId: user.id },
         _max: { number: true },
@@ -92,6 +186,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           userId: user.id,
           number: nextNumber,
           date,
+          endDate: null,
           topics,
           whatStoodOut,
           prepItems,

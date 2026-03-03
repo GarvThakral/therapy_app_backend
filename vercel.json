@@ -2,6 +2,24 @@
   "framework": null,
   "buildCommand": "npm run build",
   "outputDirectory": ".",
+  "rewrites": [
+    {
+      "source": "/api/community",
+      "destination": "/api/logs?resource=community"
+    },
+    {
+      "source": "/api/community/comments",
+      "destination": "/api/logs?resource=community-comments"
+    },
+    {
+      "source": "/api/community/likes",
+      "destination": "/api/logs?resource=community-likes"
+    },
+    {
+      "source": "/api/community/reports",
+      "destination": "/api/logs?resource=community-reports"
+    }
+  ],
   "functions": {
     "api/**/*.ts": {
       "maxDuration": 10

@@ -70,6 +70,46 @@ app.options("/api/logs", wrap(logHandler));
 app.get("/api/logs", wrap(logHandler));
 app.post("/api/logs", wrap(logHandler));
 
+app.options("/api/community", wrap((req, res) => {
+  (req as any).query = { ...req.query, resource: "community" };
+  return logHandler(req as any, res as any);
+}));
+app.get("/api/community", wrap((req, res) => {
+  (req as any).query = { ...req.query, resource: "community" };
+  return logHandler(req as any, res as any);
+}));
+app.post("/api/community", wrap((req, res) => {
+  (req as any).query = { ...req.query, resource: "community" };
+  return logHandler(req as any, res as any);
+}));
+
+app.options("/api/community/comments", wrap((req, res) => {
+  (req as any).query = { ...req.query, resource: "community-comments" };
+  return logHandler(req as any, res as any);
+}));
+app.post("/api/community/comments", wrap((req, res) => {
+  (req as any).query = { ...req.query, resource: "community-comments" };
+  return logHandler(req as any, res as any);
+}));
+
+app.options("/api/community/likes", wrap((req, res) => {
+  (req as any).query = { ...req.query, resource: "community-likes" };
+  return logHandler(req as any, res as any);
+}));
+app.post("/api/community/likes", wrap((req, res) => {
+  (req as any).query = { ...req.query, resource: "community-likes" };
+  return logHandler(req as any, res as any);
+}));
+
+app.options("/api/community/reports", wrap((req, res) => {
+  (req as any).query = { ...req.query, resource: "community-reports" };
+  return logHandler(req as any, res as any);
+}));
+app.post("/api/community/reports", wrap((req, res) => {
+  (req as any).query = { ...req.query, resource: "community-reports" };
+  return logHandler(req as any, res as any);
+}));
+
 app.options("/api/logs/:id", wrap(logItemHandler));
 app.patch("/api/logs/:id", wrap((req, res) => {
   (req as any).query = { ...req.query, id: req.params.id };
