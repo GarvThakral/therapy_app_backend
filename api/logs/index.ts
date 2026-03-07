@@ -1,6 +1,8 @@
 import type { EntryType } from "@prisma/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+import { encryptText } from "../../lib/crypto.js";
+import { handleServerError } from "../../lib/errors.js";
 import { handleCommunityRequest, type CommunityResource } from "../../lib/community.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { archiveOldLogs, serializeLogEntry } from "../../lib/logs.js";
@@ -67,9 +69,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       return res.status(200).json({ logs: logs.map(serializeLogEntry) });
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to fetch logs",
-      });
+      return handleServerError(
+        res,
+        "logs:list",
+        error,
+        "Unable to load logs right now. Please try again.",
+      );
     }
   }
 
@@ -92,23 +97,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
+      const prepNote = body.prepNote?.trim();
       const log = await prisma.logEntry.create({
         data: {
           userId: user.id,
-          text,
+          text: encryptText(text),
           type,
           intensity,
           addedToPrep: Boolean(body.addedToPrep),
-          prepNote: body.prepNote?.trim() || null,
+          prepNote: prepNote ? encryptText(prepNote) : null,
           checkedOff: Boolean(body.checkedOff),
         },
       });
 
       return res.status(201).json({ log: serializeLogEntry(log) });
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to create log",
-      });
+      return handleServerError(
+        res,
+        "logs:create",
+        error,
+        "Unable to save your log right now. Please try again.",
+      );
     }
   }
 

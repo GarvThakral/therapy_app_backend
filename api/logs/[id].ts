@@ -1,6 +1,8 @@
 import type { EntryType } from "@prisma/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+import { encryptText } from "../../lib/crypto.js";
+import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { serializeLogEntry } from "../../lib/logs.js";
 import { prisma } from "../../lib/prisma.js";
@@ -38,9 +40,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: "Log id is required" });
   }
 
-  const existing = await prisma.logEntry.findFirst({
-    where: { id, userId: user.id },
-  });
+  let existing;
+  try {
+    existing = await prisma.logEntry.findFirst({
+      where: { id, userId: user.id },
+    });
+  } catch (error) {
+    return handleServerError(
+      res,
+      "logs:item:find",
+      error,
+      "Unable to load this log right now. Please try again.",
+    );
+  }
 
   if (!existing) {
     return res.status(404).json({ error: "Log not found" });
@@ -50,7 +62,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const body = (req.body ?? {}) as UpdateLogBody;
     const data: Record<string, unknown> = {};
 
-    if (typeof body.text === "string") data.text = body.text.trim();
+    if (typeof body.text === "string") {
+      const text = body.text.trim();
+      if (!text) return res.status(400).json({ error: "Text is required" });
+      data.text = encryptText(text);
+    }
     if (body.type) {
       if (!ALLOWED_TYPES.includes(body.type)) {
         return res.status(400).json({ error: "Invalid log type" });
@@ -66,7 +82,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (typeof body.addedToPrep === "boolean") data.addedToPrep = body.addedToPrep;
     if (typeof body.checkedOff === "boolean") data.checkedOff = body.checkedOff;
     if (body.prepNote === null) data.prepNote = null;
-    if (typeof body.prepNote === "string") data.prepNote = body.prepNote.trim();
+    if (typeof body.prepNote === "string") {
+      const prepNote = body.prepNote.trim();
+      data.prepNote = prepNote ? encryptText(prepNote) : null;
+    }
 
     try {
       const updated = await prisma.logEntry.update({
@@ -76,9 +95,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       return res.status(200).json({ log: serializeLogEntry(updated) });
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to update log",
-      });
+      return handleServerError(
+        res,
+        "logs:item:update",
+        error,
+        "Unable to update this log right now. Please try again.",
+      );
     }
   }
 
@@ -87,9 +109,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await prisma.logEntry.delete({ where: { id: existing.id } });
       return res.status(204).end();
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to delete log",
-      });
+      return handleServerError(
+        res,
+        "logs:item:delete",
+        error,
+        "Unable to delete this log right now. Please try again.",
+      );
     }
   }
 

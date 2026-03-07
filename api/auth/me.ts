@@ -31,8 +31,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ user: toPublicUser(user) });
   } catch (error) {
+    console.error("[auth:me] token validation failed", error);
     return res.status(401).json({
-      error: error instanceof Error ? error.message : "Invalid token",
+      error: "Session expired or invalid. Please log in again.",
     });
   }
 }

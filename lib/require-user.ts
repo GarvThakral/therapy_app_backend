@@ -21,8 +21,9 @@ export async function requireUser(req: VercelRequest, res: VercelResponse) {
 
     return user;
   } catch (error) {
+    console.error("[auth:require-user] token verification failed", error);
     res.status(401).json({
-      error: error instanceof Error ? error.message : "Invalid token",
+      error: "Session expired or invalid. Please log in again.",
     });
     return null;
   }

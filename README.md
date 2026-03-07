@@ -14,12 +14,19 @@ npm install
 Create `.env` from `.env.example` and set:
 - `DATABASE_URL`
 - `JWT_SECRET`
+- `DATA_ENCRYPTION_KEY` (used to encrypt user content at rest)
 - `CORS_ORIGIN` (for local frontend, usually `http://localhost:5173`)
 
 ## 3) Initialize Prisma
 
 ```bash
 npx prisma migrate dev --name init
+```
+
+If you already have plaintext data and want to encrypt it in-place:
+
+```bash
+npm run data:encrypt
 ```
 
 ## 4) Run locally (Vercel runtime)
@@ -56,5 +63,6 @@ Local endpoints:
 - Set **Root Directory** to `backend`.
 - Add `DATABASE_URL` in Vercel environment variables.
 - Add `JWT_SECRET` in Vercel environment variables.
+- Add `DATA_ENCRYPTION_KEY` in Vercel environment variables.
 - Add `CORS_ORIGIN` if frontend is hosted on a different origin.
 - Deploy.

@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+import { decryptText, encryptText } from "../../lib/crypto.js";
+import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
@@ -9,6 +11,14 @@ function getId(req: VercelRequest) {
   const value = req.query.id;
   if (Array.isArray(value)) return value[0];
   return value;
+}
+
+function serializeHomeworkItem(item: Awaited<ReturnType<typeof prisma.homeworkItem.findFirst>>) {
+  if (!item) return null;
+  return {
+    ...item,
+    text: decryptText(item.text),
+  };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -22,16 +32,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const id = getId(req);
   if (!id) return res.status(400).json({ error: "Homework id is required" });
 
-  const existing = await prisma.homeworkItem.findFirst({
-    where: { id, userId: user.id },
-  });
+  let existing: Awaited<ReturnType<typeof prisma.homeworkItem.findFirst>>;
+  try {
+    existing = await prisma.homeworkItem.findFirst({
+      where: { id, userId: user.id },
+    });
+  } catch (error) {
+    return handleServerError(
+      res,
+      "homework:item:find",
+      error,
+      "Unable to load this homework item right now. Please try again.",
+    );
+  }
   if (!existing) return res.status(404).json({ error: "Homework not found" });
 
   if (req.method === "PATCH") {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const data: Record<string, unknown> = {};
 
-    if (typeof body.text === "string") data.text = body.text.trim();
+    if (typeof body.text === "string") {
+      const text = body.text.trim();
+      if (!text) return res.status(400).json({ error: "Homework text is required" });
+      data.text = encryptText(text);
+    }
     if (typeof body.completed === "boolean") {
       data.completed = body.completed;
       data.completedDate = body.completed ? new Date() : null;
@@ -51,11 +75,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         where: { id: existing.id },
         data,
       });
-      return res.status(200).json({ homework: updated });
+      return res.status(200).json({ homework: serializeHomeworkItem(updated) });
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to update homework",
-      });
+      return handleServerError(
+        res,
+        "homework:item:update",
+        error,
+        "Unable to update this homework item right now. Please try again.",
+      );
     }
   }
 
@@ -64,9 +91,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await prisma.homeworkItem.delete({ where: { id: existing.id } });
       return res.status(204).end();
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to delete homework",
-      });
+      return handleServerError(
+        res,
+        "homework:item:delete",
+        error,
+        "Unable to delete this homework item right now. Please try again.",
+      );
     }
   }
 

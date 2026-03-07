@@ -27,11 +27,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       database: "up",
     });
   } catch (error) {
+    console.error("[health:database]", error);
     return res.status(503).json({
       ok: false,
       timestamp,
       database: "down",
-      error: error instanceof Error ? error.message : "Unknown database error",
+      error: "Database unavailable",
     });
   }
 }

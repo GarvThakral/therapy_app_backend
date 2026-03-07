@@ -1,5 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+import {
+  decryptNullableText,
+  decryptStringArray,
+  decryptText,
+  encryptStringArray,
+  encryptText,
+} from "../../lib/crypto.js";
+import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
@@ -12,11 +20,11 @@ function serializeSession(session: Awaited<ReturnType<typeof prisma.therapySessi
     date: session.date,
     endDate: session.endDate,
     number: session.number,
-    topics: session.topics,
-    whatStoodOut: session.whatStoodOut,
-    prepItems: session.prepItems,
+    topics: decryptStringArray(session.topics),
+    whatStoodOut: decryptText(session.whatStoodOut),
+    prepItems: decryptStringArray(session.prepItems),
     postMood: session.postMood,
-    moodWord: session.moodWord,
+    moodWord: decryptNullableText(session.moodWord),
     completed: session.completed,
     isCurrent: session.endDate === null,
     createdAt: session.createdAt,
@@ -41,9 +49,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const id = getId(req);
   if (!id) return res.status(400).json({ error: "Session id is required" });
 
-  const existing = await prisma.therapySession.findFirst({
-    where: { id, userId: user.id },
-  });
+  let existing: Awaited<ReturnType<typeof prisma.therapySession.findFirst>>;
+  try {
+    existing = await prisma.therapySession.findFirst({
+      where: { id, userId: user.id },
+    });
+  } catch (error) {
+    return handleServerError(
+      res,
+      "sessions:item:find",
+      error,
+      "Unable to load this session right now. Please try again.",
+    );
+  }
   if (!existing) return res.status(404).json({ error: "Session not found" });
 
   if (req.method === "PATCH") {
@@ -61,11 +79,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       data.endDate = parsed;
     }
     if (body.endDate === null) data.endDate = null;
-    if (Array.isArray(body.topics)) data.topics = body.topics.filter(Boolean);
-    if (Array.isArray(body.prepItems)) data.prepItems = body.prepItems.filter(Boolean);
-    if (typeof body.whatStoodOut === "string") data.whatStoodOut = body.whatStoodOut.trim();
+    if (Array.isArray(body.topics)) {
+      data.topics = encryptStringArray(body.topics.map(value => String(value).trim()).filter(Boolean));
+    }
+    if (Array.isArray(body.prepItems)) {
+      data.prepItems = encryptStringArray(body.prepItems.map(value => String(value).trim()).filter(Boolean));
+    }
+    if (typeof body.whatStoodOut === "string") data.whatStoodOut = encryptText(body.whatStoodOut.trim());
     if (typeof body.postMood === "number") data.postMood = body.postMood;
-    if (typeof body.moodWord === "string") data.moodWord = body.moodWord.trim();
+    if (typeof body.moodWord === "string") {
+      const moodWord = body.moodWord.trim();
+      data.moodWord = moodWord ? encryptText(moodWord) : null;
+    }
     if (typeof body.completed === "boolean") data.completed = body.completed;
 
     try {
@@ -75,9 +100,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
       return res.status(200).json({ session: serializeSession(updated) });
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to update session",
-      });
+      return handleServerError(
+        res,
+        "sessions:item:update",
+        error,
+        "Unable to update this session right now. Please try again.",
+      );
     }
   }
 
@@ -86,9 +114,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await prisma.therapySession.delete({ where: { id: existing.id } });
       return res.status(204).end();
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to delete session",
-      });
+      return handleServerError(
+        res,
+        "sessions:item:delete",
+        error,
+        "Unable to delete this session right now. Please try again.",
+      );
     }
   }
 

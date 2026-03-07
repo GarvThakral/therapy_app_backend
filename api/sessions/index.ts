@@ -1,5 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+import {
+  decryptNullableText,
+  decryptStringArray,
+  decryptText,
+  encryptStringArray,
+  encryptText,
+} from "../../lib/crypto.js";
+import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
@@ -28,15 +36,23 @@ function serializeSession(session: Awaited<ReturnType<typeof prisma.therapySessi
     date: session.date,
     endDate: session.endDate,
     number: session.number,
-    topics: session.topics,
-    whatStoodOut: session.whatStoodOut,
-    prepItems: session.prepItems,
+    topics: decryptStringArray(session.topics),
+    whatStoodOut: decryptText(session.whatStoodOut),
+    prepItems: decryptStringArray(session.prepItems),
     postMood: session.postMood,
-    moodWord: session.moodWord,
+    moodWord: decryptNullableText(session.moodWord),
     completed: session.completed,
     isCurrent: session.endDate === null,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
+  };
+}
+
+function serializeHomeworkItem(item: Awaited<ReturnType<typeof prisma.homeworkItem.findFirst>>) {
+  if (!item) return null;
+  return {
+    ...item,
+    text: decryptText(item.text),
   };
 }
 
@@ -64,9 +80,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       return res.status(200).json({ sessions: sessions.map(serializeSession) });
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to fetch sessions",
-      });
+      return handleServerError(
+        res,
+        "sessions:list",
+        error,
+        "Unable to load sessions right now. Please try again.",
+      );
     }
   }
 
@@ -78,8 +97,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const action = body.action ?? "save";
-    const topics = Array.isArray(body.topics) ? body.topics.filter(Boolean) : [];
-    const prepItems = Array.isArray(body.prepItems) ? body.prepItems.filter(Boolean) : [];
+    const topics = Array.isArray(body.topics)
+      ? body.topics.map(value => String(value).trim()).filter(Boolean)
+      : [];
+    const prepItems = Array.isArray(body.prepItems)
+      ? body.prepItems.map(value => String(value).trim()).filter(Boolean)
+      : [];
     const whatStoodOut = body.whatStoodOut?.trim() || "";
     const postMood = typeof body.postMood === "number" ? body.postMood : 5;
     const moodWord = body.moodWord?.trim() || null;
@@ -113,7 +136,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               date,
               endDate: null,
               topics: [],
-              whatStoodOut: "",
+              whatStoodOut: encryptText(""),
               prepItems: [],
               postMood: 5,
               moodWord: null,
@@ -128,9 +151,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           started: true,
         });
       } catch (error) {
-        return res.status(500).json({
-          error: error instanceof Error ? error.message : "Failed to start session",
-        });
+        return handleServerError(
+          res,
+          "sessions:start",
+          error,
+          "Unable to start a new session right now. Please try again.",
+        );
       }
     }
 
@@ -144,11 +170,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const updatedSession = await prisma.therapySession.update({
           where: { id: existing.id },
           data: {
-            topics,
-            whatStoodOut,
-            prepItems,
+            topics: encryptStringArray(topics),
+            whatStoodOut: encryptText(whatStoodOut),
+            prepItems: encryptStringArray(prepItems),
             postMood,
-            moodWord,
+            moodWord: moodWord ? encryptText(moodWord) : null,
             completed,
           },
         });
@@ -161,7 +187,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 data: {
                   userId: user.id,
                   sessionId: existing.id,
-                  text: item.text!.trim(),
+                  text: encryptText(item.text!.trim()),
                   sessionDate: existing.date,
                   dueDate: item.dueDate ? new Date(item.dueDate) : null,
                 },
@@ -171,7 +197,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         return res.status(200).json({
           session: serializeSession(updatedSession),
-          homeworkItems: createdHomework,
+          homeworkItems: createdHomework.map(serializeHomeworkItem),
         });
       }
 
@@ -187,18 +213,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           number: nextNumber,
           date,
           endDate: null,
-          topics,
-          whatStoodOut,
-          prepItems,
+          topics: encryptStringArray(topics),
+          whatStoodOut: encryptText(whatStoodOut),
+          prepItems: encryptStringArray(prepItems),
           postMood,
-          moodWord,
+          moodWord: moodWord ? encryptText(moodWord) : null,
           completed,
           homework: {
             create: (body.homeworkItems ?? [])
               .filter(item => item.text?.trim())
               .map(item => ({
                 userId: user.id,
-                text: item.text!.trim(),
+                text: encryptText(item.text!.trim()),
                 sessionDate: date,
                 dueDate: item.dueDate ? new Date(item.dueDate) : null,
               })),
@@ -209,12 +235,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       return res.status(201).json({
         session: serializeSession(session),
-        homeworkItems: session.homework,
+        homeworkItems: session.homework.map(serializeHomeworkItem),
       });
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to create session",
-      });
+      return handleServerError(
+        res,
+        "sessions:create",
+        error,
+        "Unable to save this session right now. Please try again.",
+      );
     }
   }
 

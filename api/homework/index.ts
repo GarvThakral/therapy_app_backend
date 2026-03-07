@@ -1,5 +1,8 @@
+import type { HomeworkItem } from "@prisma/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+import { decryptText, encryptText } from "../../lib/crypto.js";
+import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
@@ -10,6 +13,13 @@ interface CreateHomeworkBody {
   sessionId?: string;
   sessionDate?: string;
   dueDate?: string;
+}
+
+function serializeHomeworkItem(item: HomeworkItem) {
+  return {
+    ...item,
+    text: decryptText(item.text),
+  };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -34,11 +44,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         orderBy: [{ completed: "asc" }, { sessionDate: "desc" }, { createdAt: "desc" }],
       });
 
-      return res.status(200).json({ homework: items });
+      return res.status(200).json({ homework: items.map(serializeHomeworkItem) });
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to fetch homework",
-      });
+      return handleServerError(
+        res,
+        "homework:list",
+        error,
+        "Unable to load homework right now. Please try again.",
+      );
     }
   }
 
@@ -60,17 +73,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         data: {
           userId: user.id,
           sessionId: body.sessionId || null,
-          text,
+          text: encryptText(text),
           sessionDate,
           dueDate,
         },
       });
 
-      return res.status(201).json({ homework: item });
+      return res.status(201).json({ homework: serializeHomeworkItem(item) });
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to create homework",
-      });
+      return handleServerError(
+        res,
+        "homework:create",
+        error,
+        "Unable to create homework right now. Please try again.",
+      );
     }
   }
 

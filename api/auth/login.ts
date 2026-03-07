@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 import { signToken } from "../../lib/auth.js";
+import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { verifyPassword } from "../../lib/password.js";
 import { prisma } from "../../lib/prisma.js";
@@ -46,8 +47,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(200).json({ token, user: publicUser });
   } catch (error) {
-    return res.status(500).json({
-      error: error instanceof Error ? error.message : "Failed to log in",
-    });
+    return handleServerError(
+      res,
+      "auth:login",
+      error,
+      "Unable to log in right now. Please try again.",
+    );
   }
 }

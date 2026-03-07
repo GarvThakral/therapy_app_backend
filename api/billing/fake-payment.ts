@@ -43,8 +43,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       user: toPublicUser(updated),
     });
   } catch (error) {
+    console.error("[billing:fake-payment] token validation failed", error);
     return res.status(401).json({
-      error: error instanceof Error ? error.message : "Unauthorized",
+      error: "Session expired or invalid. Please log in again.",
     });
   }
 }

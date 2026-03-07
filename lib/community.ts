@@ -1,6 +1,8 @@
 import type { User } from "@prisma/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+import { decryptText, encryptNullableText, encryptText } from "./crypto.js";
+import { handleServerError } from "./errors.js";
 import { prisma } from "./prisma.js";
 
 const TAGS = ["Session Prep", "Triggers", "Wins", "Homework", "Boundaries", "Anxiety", "General"] as const;
@@ -43,6 +45,8 @@ const ANIMALS = [
 const PAGE_DEFAULT = 12;
 const PAGE_MAX = 25;
 const TRENDING_FETCH_MULTIPLIER = 4;
+const SEARCH_FETCH_MULTIPLIER = 8;
+const SEARCH_FETCH_MAX = 250;
 const MAX_TITLE_LENGTH = 180;
 const MAX_POST_BODY_LENGTH = 4000;
 const MAX_COMMENT_LENGTH = 1200;
@@ -122,12 +126,9 @@ function validateSafety(text: string) {
 
 function buildWhere(params: {
   tag?: string;
-  search?: string;
   replies: "all" | "with" | "without";
   cursor: Date | null;
 }) {
-  const search = params.search?.trim();
-
   return {
     isHidden: false,
     ...(params.tag ? { tag: params.tag } : {}),
@@ -137,38 +138,49 @@ function buildWhere(params: {
       : params.replies === "without"
         ? { comments: { none: { isHidden: false } } }
         : {}),
-    ...(search
-      ? {
-          OR: [
-            { title: { contains: search, mode: "insensitive" as const } },
-            { body: { contains: search, mode: "insensitive" as const } },
-            {
-              comments: {
-                some: {
-                  isHidden: false,
-                  body: { contains: search, mode: "insensitive" as const },
-                },
-              },
-            },
-          ],
-        }
-      : {}),
   };
 }
 
-function trendingScore(post: any) {
+function trendingScore(post: Pick<SerializedCommunityPost, "createdAt" | "likes" | "repliesCount">) {
   const ageMs = Date.now() - new Date(post.createdAt).getTime();
   const ageHours = Math.max(ageMs / (1000 * 60 * 60), 0);
   const recencyBoost = Math.max(72 - ageHours, 0) * 0.25;
-  return post._count.likes * 3 + post._count.comments * 2 + recencyBoost;
+  return post.likes * 3 + post.repliesCount * 2 + recencyBoost;
 }
 
-function serializePost(post: any) {
+interface SerializedCommunityReply {
+  id: string;
+  alias: string;
+  body: string;
+  createdAt: Date;
+  updatedAt: Date;
+  likes: number;
+  liked: boolean;
+}
+
+interface SerializedCommunityPost {
+  id: string;
+  alias: string;
+  title: string;
+  body: string;
+  tag: string;
+  createdAt: Date;
+  updatedAt: Date;
+  likes: number;
+  liked: boolean;
+  repliesCount: number;
+  replies: SerializedCommunityReply[];
+}
+
+function serializePost(post: any): SerializedCommunityPost {
+  const title = decryptText(post.title);
+  const body = decryptText(post.body);
+
   return {
     id: post.id,
     alias: getCommunityAlias(post.userId),
-    title: post.title,
-    body: post.body,
+    title,
+    body,
     tag: post.tag,
     createdAt: post.createdAt,
     updatedAt: post.updatedAt,
@@ -178,7 +190,7 @@ function serializePost(post: any) {
     replies: post.comments.map((comment: any) => ({
       id: comment.id,
       alias: getCommunityAlias(comment.userId),
-      body: comment.body,
+      body: decryptText(comment.body),
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
       likes: comment._count.likes,
@@ -187,18 +199,32 @@ function serializePost(post: any) {
   };
 }
 
+function matchesSearch(post: SerializedCommunityPost, search: string) {
+  const needle = search.toLowerCase();
+  if (!needle) return true;
+
+  if (post.title.toLowerCase().includes(needle)) return true;
+  if (post.body.toLowerCase().includes(needle)) return true;
+  if (post.tag.toLowerCase().includes(needle)) return true;
+
+  return post.replies.some(reply => reply.body.toLowerCase().includes(needle));
+}
+
 async function listPosts(req: VercelRequest, res: VercelResponse, user: User) {
   const tag = parseTag(req.query.tag);
   const sort = parseSort(req.query.sort);
-  const search = typeof req.query.search === "string" ? req.query.search : undefined;
+  const search = typeof req.query.search === "string" ? req.query.search.trim() : "";
   const replies = parseReplies(req.query.replies);
   const limit = parseLimit(req.query.limit);
   const cursor = parseCursor(req.query.cursor);
 
-  const fetchTake = sort === "trending" ? limit * TRENDING_FETCH_MULTIPLIER : limit + 1;
+  const baseFetchTake = sort === "trending" ? limit * TRENDING_FETCH_MULTIPLIER : limit + 1;
+  const fetchTake = search
+    ? Math.min(Math.max(baseFetchTake * SEARCH_FETCH_MULTIPLIER, limit * 6), SEARCH_FETCH_MAX)
+    : baseFetchTake;
 
   const posts = await prisma.communityPost.findMany({
-    where: buildWhere({ tag, search, replies, cursor }),
+    where: buildWhere({ tag, replies, cursor }),
     include: {
       _count: {
         select: {
@@ -231,23 +257,28 @@ async function listPosts(req: VercelRequest, res: VercelResponse, user: User) {
     take: fetchTake,
   });
 
-  const sorted = sort === "trending" ? [...posts].sort((a, b) => trendingScore(b) - trendingScore(a)) : posts;
+  const serialized = posts.map(serializePost);
+  const filtered = search ? serialized.filter(post => matchesSearch(post, search)) : serialized;
+  const sorted =
+    sort === "trending" ? [...filtered].sort((a, b) => trendingScore(b) - trendingScore(a)) : filtered;
+  const hasMore = sorted.length > limit;
   const paged = sorted.slice(0, limit);
-  const nextCursor = paged.length === limit ? paged[paged.length - 1].createdAt.toISOString() : null;
+  const nextCursor =
+    hasMore && paged.length > 0 ? new Date(paged[paged.length - 1].createdAt).toISOString() : null;
 
   return res.status(200).json({
     viewerAlias: getCommunityAlias(user.id),
-    posts: paged.map(serializePost),
+    posts: paged,
     filters: {
       tag: tag ?? "All",
       sort,
-      search: search ?? "",
+      search,
       replies,
       limit,
     },
     pagination: {
       nextCursor,
-      hasMore: Boolean(nextCursor),
+      hasMore,
     },
     tags: ["All", ...TAGS],
     reportReasons: [...REPORT_REASONS],
@@ -286,23 +317,26 @@ async function createPost(req: VercelRequest, res: VercelResponse, user: User) {
   const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
   const tenMinutesAgo = new Date(Date.now() - DUPLICATE_WINDOW_MS);
 
-  const [postCountLastHour, duplicatePost] = await Promise.all([
+  const [postCountLastHour, recentPosts] = await Promise.all([
     prisma.communityPost.count({
       where: {
         userId: user.id,
         createdAt: { gte: hourAgo },
       },
     }),
-    prisma.communityPost.findFirst({
+    prisma.communityPost.findMany({
       where: {
         userId: user.id,
-        title,
-        body: content,
         createdAt: { gte: tenMinutesAgo },
       },
-      select: { id: true },
+      select: { id: true, title: true, body: true },
+      take: 25,
     }),
   ]);
+
+  const duplicatePost = recentPosts.some(
+    post => decryptText(post.title) === title && decryptText(post.body) === content,
+  );
 
   if (postCountLastHour >= POSTS_PER_HOUR_LIMIT) {
     return res.status(429).json({ error: "Posting too quickly. Please wait before creating another post." });
@@ -315,8 +349,8 @@ async function createPost(req: VercelRequest, res: VercelResponse, user: User) {
   const created = await prisma.communityPost.create({
     data: {
       userId: user.id,
-      title,
-      body: content,
+      title: encryptText(title),
+      body: encryptText(content),
       tag,
     },
     include: {
@@ -376,7 +410,10 @@ async function createComment(req: VercelRequest, res: VercelResponse, user: User
   const safety = validateSafety(content);
   if (safety) return res.status(400).json({ error: safety });
 
-  const post = await prisma.communityPost.findUnique({ where: { id: postId } });
+  const post = await prisma.communityPost.findUnique({
+    where: { id: postId },
+    select: { id: true, isHidden: true },
+  });
   if (!post || post.isHidden) {
     return res.status(404).json({ error: "Post not found" });
   }
@@ -384,23 +421,25 @@ async function createComment(req: VercelRequest, res: VercelResponse, user: User
   const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
   const tenMinutesAgo = new Date(Date.now() - DUPLICATE_WINDOW_MS);
 
-  const [commentCountLastHour, duplicateComment] = await Promise.all([
+  const [commentCountLastHour, recentComments] = await Promise.all([
     prisma.communityComment.count({
       where: {
         userId: user.id,
         createdAt: { gte: hourAgo },
       },
     }),
-    prisma.communityComment.findFirst({
+    prisma.communityComment.findMany({
       where: {
         postId,
         userId: user.id,
-        body: content,
         createdAt: { gte: tenMinutesAgo },
       },
-      select: { id: true },
+      select: { id: true, body: true },
+      take: 50,
     }),
   ]);
+
+  const duplicateComment = recentComments.some(comment => decryptText(comment.body) === content);
 
   if (commentCountLastHour >= COMMENTS_PER_HOUR_LIMIT) {
     return res.status(429).json({ error: "Replying too quickly. Please wait before posting another reply." });
@@ -414,7 +453,7 @@ async function createComment(req: VercelRequest, res: VercelResponse, user: User
     data: {
       postId,
       userId: user.id,
-      body: content,
+      body: encryptText(content),
     },
     include: {
       _count: {
@@ -431,7 +470,7 @@ async function createComment(req: VercelRequest, res: VercelResponse, user: User
     comment: {
       id: comment.id,
       alias: getCommunityAlias(comment.userId),
-      body: comment.body,
+      body: decryptText(comment.body),
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
       likes: comment._count.likes,
@@ -576,6 +615,7 @@ async function createReport(req: VercelRequest, res: VercelResponse, user: User)
   const targetId = body.targetId;
   const reason = typeof body.reason === "string" ? body.reason : "Other";
   const details = typeof body.details === "string" ? body.details.trim().slice(0, MAX_REPORT_DETAILS_LENGTH) : null;
+  const encryptedDetails = encryptNullableText(details);
 
   if (!targetType || !targetId) {
     return res.status(400).json({ error: "targetType and targetId are required" });
@@ -617,7 +657,7 @@ async function createReport(req: VercelRequest, res: VercelResponse, user: User)
         reporterId: user.id,
         postId: targetId,
         reason,
-        details,
+        details: encryptedDetails,
       },
     });
 
@@ -657,7 +697,7 @@ async function createReport(req: VercelRequest, res: VercelResponse, user: User)
         reporterId: user.id,
         commentId: targetId,
         reason,
-        details,
+        details: encryptedDetails,
       },
     });
 
@@ -706,8 +746,11 @@ export async function handleCommunityRequest(
 
     return res.status(400).json({ error: "Invalid community resource" });
   } catch (error) {
-    return res.status(500).json({
-      error: error instanceof Error ? error.message : "Community request failed",
-    });
+    return handleServerError(
+      res,
+      "community:request",
+      error,
+      "Community request failed. Please try again.",
+    );
   }
 }

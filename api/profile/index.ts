@@ -1,5 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
+import { decryptNullableText, decryptText, encryptText } from "../../lib/crypto.js";
+import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
@@ -9,8 +11,8 @@ function serializeProfile(profile: Awaited<ReturnType<typeof prisma.userProfile.
   if (!profile) return null;
   return {
     id: profile.id,
-    displayName: profile.displayName,
-    therapistName: profile.therapistName,
+    displayName: decryptText(profile.displayName),
+    therapistName: decryptNullableText(profile.therapistName),
     sessionFrequency: profile.sessionFrequency,
     sessionDay: profile.sessionDay,
     sessionTime: profile.sessionTime,
@@ -50,16 +52,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         profile = await prisma.userProfile.create({
           data: {
             userId: user.id,
-            displayName: user.name || "Alex",
+            displayName: encryptText(user.name || "Alex"),
           },
         });
       }
 
       return res.status(200).json({ profile: serializeProfile(profile) });
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to fetch profile",
-      });
+      return handleServerError(
+        res,
+        "profile:get",
+        error,
+        "Unable to load profile right now. Please try again.",
+      );
     }
   }
 
@@ -67,8 +72,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const data: Record<string, unknown> = {};
 
-    if (typeof body.displayName === "string") data.displayName = body.displayName.trim() || "Alex";
-    if (typeof body.therapistName === "string") data.therapistName = body.therapistName.trim() || null;
+    if (typeof body.displayName === "string") {
+      data.displayName = encryptText(body.displayName.trim() || "Alex");
+    }
+    if (typeof body.therapistName === "string") {
+      const therapistName = body.therapistName.trim();
+      data.therapistName = therapistName ? encryptText(therapistName) : null;
+    }
     if (typeof body.sessionFrequency === "string") data.sessionFrequency = body.sessionFrequency;
     if (typeof body.sessionDay === "string") data.sessionDay = body.sessionDay;
     if (typeof body.sessionTime === "string") data.sessionTime = body.sessionTime;
@@ -90,16 +100,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         update: data,
         create: {
           userId: user.id,
-          displayName: user.name || "Alex",
+          displayName: encryptText(user.name || "Alex"),
           ...data,
         },
       });
 
       return res.status(200).json({ profile: serializeProfile(profile) });
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to update profile",
-      });
+      return handleServerError(
+        res,
+        "profile:update",
+        error,
+        "Unable to update profile right now. Please try again.",
+      );
     }
   }
 
@@ -108,9 +121,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await prisma.user.delete({ where: { id: user.id } });
       return res.status(204).end();
     } catch (error) {
-      return res.status(500).json({
-        error: error instanceof Error ? error.message : "Failed to delete account",
-      });
+      return handleServerError(
+        res,
+        "profile:delete",
+        error,
+        "Unable to delete account right now. Please try again.",
+      );
     }
   }
 

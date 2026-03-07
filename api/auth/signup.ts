@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 import { signToken } from "../../lib/auth.js";
+import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { hashPassword } from "../../lib/password.js";
 import { prisma } from "../../lib/prisma.js";
@@ -56,8 +57,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(201).json({ token, user: publicUser });
   } catch (error) {
-    return res.status(500).json({
-      error: error instanceof Error ? error.message : "Failed to create account",
-    });
+    return handleServerError(
+      res,
+      "auth:signup",
+      error,
+      "Unable to create account right now. Please try again.",
+    );
   }
 }

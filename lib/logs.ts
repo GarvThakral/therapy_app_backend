@@ -1,5 +1,6 @@
 import type { LogEntry } from "@prisma/client";
 
+import { decryptNullableText, decryptText } from "./crypto.js";
 import { prisma } from "./prisma.js";
 
 const ARCHIVE_AFTER_DAYS = 14;
@@ -7,11 +8,11 @@ const ARCHIVE_AFTER_DAYS = 14;
 export function serializeLogEntry(log: LogEntry) {
   return {
     id: log.id,
-    text: log.text,
+    text: decryptText(log.text),
     type: log.type,
     intensity: log.intensity,
     addedToPrep: log.addedToPrep,
-    prepNote: log.prepNote,
+    prepNote: decryptNullableText(log.prepNote),
     checkedOff: log.checkedOff,
     isArchived: log.isArchived,
     archivedAt: log.archivedAt,
