@@ -158,11 +158,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (handleOptions(req, res)) return;
   applyCors(req, res);
 
-  if (req.method === "GET" && queryParam(req, "provider") === "google") {
-    if (!applyRateLimit(req, res, "auth-google", { limit: 30, windowMs: 60 * 1000 })) return;
-    const intent = queryParam(req, "intent") || "start";
+  const googleProvider = queryParam(req, "provider");
+  const googleIntent = queryParam(req, "intent");
+  const googleCode = queryParam(req, "code");
+  const isGoogleStart = req.method === "GET" && googleProvider === "google" && (googleIntent || "start") === "start";
+  const isGoogleCallback = req.method === "GET" && ((googleIntent === "callback") || Boolean(googleCode));
 
-    if (intent === "start") {
+  if (isGoogleStart || isGoogleCallback) {
+    if (!applyRateLimit(req, res, "auth-google", { limit: 30, windowMs: 60 * 1000 })) return;
+
+    if (isGoogleStart) {
       try {
         const config = getGoogleConfig();
         const nextPath = normalizeNextPath(queryParam(req, "next"));
@@ -178,7 +183,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    if (intent === "callback") {
+    if (isGoogleCallback) {
       const code = queryParam(req, "code");
       const nextPath = parseGoogleStateNext(queryParam(req, "state"));
 
