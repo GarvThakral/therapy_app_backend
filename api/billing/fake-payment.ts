@@ -15,6 +15,7 @@ interface PaymentBody {
   sessionId?: unknown;
   checkoutId?: unknown;
   email?: unknown;
+  returnUrl?: unknown;
 }
 
 type BillingAction = "start" | "confirm" | "update";
@@ -47,11 +48,12 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function getDodoConfig(): DodoConfig {
   const apiKey = asString(process.env.DODO_PAYMENTS_API_KEY ?? null);
   const productId = asString(process.env.DODO_PRODUCT_ID ?? null);
-  const envMode = process.env.DODO_ENVIRONMENT?.trim() === "live_mode" ? "live_mode" : "test_mode";
+  const envMode = process.env.DODO_ENVIRONMENT?.trim().toLowerCase();
+  const isLive = envMode === "live_mode" || envMode === "live";
   return {
     apiKey,
     productId,
-    baseUrl: envMode === "live_mode" ? DODO_LIVE_BASE_URL : DODO_TEST_BASE_URL,
+    baseUrl: isLive ? DODO_LIVE_BASE_URL : DODO_TEST_BASE_URL,
   };
 }
 
@@ -209,11 +211,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (body.plan === "PRO" && action === "start") {
-      const defaultRedirect = req.headers.origin ? `${req.headers.origin}/app/settings` : null;
+      const explicitReturnUrl = asString(body.returnUrl);
+      const hostOrigin = req.headers.origin;
+      const hostReferer = req.headers.referer;
+      
+      const defaultRedirect = explicitReturnUrl || hostReferer || (hostOrigin ? `${hostOrigin}/app/settings` : null);
       const redirectUrl = process.env.DODO_PAYMENT_REDIRECT_URL?.trim() || defaultRedirect;
+
       if (!redirectUrl) {
         return res.status(500).json({
-          error: "Missing payment redirect URL. Set DODO_PAYMENT_REDIRECT_URL in backend env.",
+          error: "Missing payment redirect URL. Provide returnUrl explicitly or set DODO_PAYMENT_REDIRECT_URL in backend env.",
         });
       }
 
