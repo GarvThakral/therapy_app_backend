@@ -1,7 +1,7 @@
 import type { EntryType } from "@prisma/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { encryptText } from "../../lib/crypto.js";
+import { encryptUserText } from "../../lib/crypto.js";
 import { handleServerError } from "../../lib/errors.js";
 import { handleCommunityRequest, type CommunityResource } from "../../lib/community.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
@@ -9,6 +9,7 @@ import { archiveOldLogs, serializeLogEntry } from "../../lib/logs.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
 import { requireUser } from "../../lib/require-user.js";
+import { getUserPrivateKeyHex } from "../../lib/users.js";
 
 interface CreateLogBody {
   text?: string;
@@ -67,7 +68,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         orderBy: { createdAt: "desc" },
       });
 
-      return res.status(200).json({ logs: logs.map(serializeLogEntry) });
+      const userKeyHex = await getUserPrivateKeyHex(user.id);
+      return res.status(200).json({ logs: logs.map(l => serializeLogEntry(l, userKeyHex)) });
     } catch (error) {
       return handleServerError(
         res,
@@ -97,20 +99,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
+      const userKeyHex = await getUserPrivateKeyHex(user.id);
       const prepNote = body.prepNote?.trim();
       const log = await prisma.logEntry.create({
         data: {
           userId: user.id,
-          text: encryptText(text),
+          text: encryptUserText(text, userKeyHex),
           type,
           intensity,
           addedToPrep: Boolean(body.addedToPrep),
-          prepNote: prepNote ? encryptText(prepNote) : null,
+          prepNote: prepNote ? encryptUserText(prepNote, userKeyHex) : null,
           checkedOff: Boolean(body.checkedOff),
         },
       });
 
-      return res.status(201).json({ log: serializeLogEntry(log) });
+      return res.status(201).json({ log: serializeLogEntry(log, userKeyHex) });
     } catch (error) {
       return handleServerError(
         res,

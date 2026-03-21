@@ -1,30 +1,31 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 import {
-  decryptNullableText,
-  decryptStringArray,
-  decryptText,
-  encryptStringArray,
-  encryptText,
+  decryptNullableUserText,
+  decryptUserStringArray,
+  decryptUserText,
+  encryptUserStringArray,
+  encryptUserText,
 } from "../../lib/crypto.js";
 import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
 import { requireUser } from "../../lib/require-user.js";
+import { getUserPrivateKeyHex } from "../../lib/users.js";
 
-function serializeSession(session: Awaited<ReturnType<typeof prisma.therapySession.findFirst>>) {
+function serializeSession(session: Awaited<ReturnType<typeof prisma.therapySession.findFirst>>, userKeyHex: string) {
   if (!session) return null;
   return {
     id: session.id,
     date: session.date,
     endDate: session.endDate,
     number: session.number,
-    topics: decryptStringArray(session.topics),
-    whatStoodOut: decryptText(session.whatStoodOut),
-    prepItems: decryptStringArray(session.prepItems),
+    topics: decryptUserStringArray(session.topics, userKeyHex),
+    whatStoodOut: decryptUserText(session.whatStoodOut, userKeyHex),
+    prepItems: decryptUserStringArray(session.prepItems, userKeyHex),
     postMood: session.postMood,
-    moodWord: decryptNullableText(session.moodWord),
+    moodWord: decryptNullableUserText(session.moodWord, userKeyHex),
     completed: session.completed,
     isCurrent: session.endDate === null,
     createdAt: session.createdAt,
@@ -65,6 +66,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!existing) return res.status(404).json({ error: "Session not found" });
 
   if (req.method === "PATCH") {
+    const userKeyHex = await getUserPrivateKeyHex(user.id);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const data: Record<string, unknown> = {};
 
@@ -80,16 +82,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (body.endDate === null) data.endDate = null;
     if (Array.isArray(body.topics)) {
-      data.topics = encryptStringArray(body.topics.map(value => String(value).trim()).filter(Boolean));
+      data.topics = encryptUserStringArray(body.topics.map(value => String(value).trim()).filter(Boolean), userKeyHex);
     }
     if (Array.isArray(body.prepItems)) {
-      data.prepItems = encryptStringArray(body.prepItems.map(value => String(value).trim()).filter(Boolean));
+      data.prepItems = encryptUserStringArray(body.prepItems.map(value => String(value).trim()).filter(Boolean), userKeyHex);
     }
-    if (typeof body.whatStoodOut === "string") data.whatStoodOut = encryptText(body.whatStoodOut.trim());
+    if (typeof body.whatStoodOut === "string") data.whatStoodOut = encryptUserText(body.whatStoodOut.trim(), userKeyHex);
     if (typeof body.postMood === "number") data.postMood = body.postMood;
     if (typeof body.moodWord === "string") {
       const moodWord = body.moodWord.trim();
-      data.moodWord = moodWord ? encryptText(moodWord) : null;
+      data.moodWord = moodWord ? encryptUserText(moodWord, userKeyHex) : null;
     }
     if (typeof body.completed === "boolean") data.completed = body.completed;
 
@@ -98,7 +100,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         where: { id: existing.id },
         data,
       });
-      return res.status(200).json({ session: serializeSession(updated) });
+      return res.status(200).json({ session: serializeSession(updated, userKeyHex) });
     } catch (error) {
       return handleServerError(
         res,

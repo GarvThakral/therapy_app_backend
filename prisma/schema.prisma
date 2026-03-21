@@ -31,6 +31,8 @@ model User {
   name                 String?
   passwordHash         String
   plan                 Plan                  @default(FREE)
+  proUntil             DateTime?
+  privateKey           String?
   logs                 LogEntry[]
   sessions             TherapySession[]
   homework             HomeworkItem[]

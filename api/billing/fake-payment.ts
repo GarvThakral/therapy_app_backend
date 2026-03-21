@@ -274,7 +274,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const upgraded = await prisma.user.update({
         where: { id: user.id },
-        data: { plan: "PRO" },
+        data: { 
+          plan: "PRO",
+          proUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), 
+        },
       });
       return res.status(200).json({
         message: "Payment confirmed. Plan upgraded to Pro.",
@@ -290,7 +293,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const updated = await prisma.user.update({
       where: { id: user.id },
-      data: { plan: body.plan },
+      data: { 
+        plan: body.plan,
+        proUntil: body.plan === "PRO" ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) : null,
+      },
     });
     return res.status(200).json({
       message: body.plan === "PRO" ? "Plan upgraded to Pro." : "Switched to Free plan.",

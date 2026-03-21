@@ -1,12 +1,13 @@
 import type { HomeworkItem } from "@prisma/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { decryptText, encryptText } from "../../lib/crypto.js";
+import { decryptUserText, encryptUserText } from "../../lib/crypto.js";
 import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
 import { requireUser } from "../../lib/require-user.js";
+import { getUserPrivateKeyHex } from "../../lib/users.js";
 
 interface CreateHomeworkBody {
   text?: string;
@@ -15,10 +16,10 @@ interface CreateHomeworkBody {
   dueDate?: string;
 }
 
-function serializeHomeworkItem(item: HomeworkItem) {
+function serializeHomeworkItem(item: HomeworkItem, userKeyHex: string) {
   return {
     ...item,
-    text: decryptText(item.text),
+    text: decryptUserText(item.text, userKeyHex),
   };
 }
 
@@ -44,7 +45,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         orderBy: [{ completed: "asc" }, { sessionDate: "desc" }, { createdAt: "desc" }],
       });
 
-      return res.status(200).json({ homework: items.map(serializeHomeworkItem) });
+      const userKeyHex = await getUserPrivateKeyHex(user.id);
+      return res.status(200).json({ homework: items.map(h => serializeHomeworkItem(h, userKeyHex)) });
     } catch (error) {
       return handleServerError(
         res,
@@ -60,6 +62,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const text = body.text?.trim();
     if (!text) return res.status(400).json({ error: "Homework text is required" });
 
+    const userKeyHex = await getUserPrivateKeyHex(user.id);
+
     const sessionDate = body.sessionDate ? new Date(body.sessionDate) : new Date();
     if (Number.isNaN(sessionDate.getTime())) return res.status(400).json({ error: "Invalid session date" });
 
@@ -73,13 +77,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         data: {
           userId: user.id,
           sessionId: body.sessionId || null,
-          text: encryptText(text),
+          text: encryptUserText(text, userKeyHex),
           sessionDate,
           dueDate,
         },
       });
 
-      return res.status(201).json({ homework: serializeHomeworkItem(item) });
+      return res.status(201).json({ homework: serializeHomeworkItem(item, userKeyHex) });
     } catch (error) {
       return handleServerError(
         res,

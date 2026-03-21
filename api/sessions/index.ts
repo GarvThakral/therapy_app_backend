@@ -1,17 +1,18 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 import {
-  decryptNullableText,
-  decryptStringArray,
-  decryptText,
-  encryptStringArray,
-  encryptText,
+  decryptNullableUserText,
+  decryptUserStringArray,
+  decryptUserText,
+  encryptUserStringArray,
+  encryptUserText,
 } from "../../lib/crypto.js";
 import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
 import { requireUser } from "../../lib/require-user.js";
+import { getUserPrivateKeyHex } from "../../lib/users.js";
 
 interface CreateSessionBody {
   action?: "start" | "save";
@@ -29,18 +30,18 @@ interface CreateSessionBody {
   }>;
 }
 
-function serializeSession(session: Awaited<ReturnType<typeof prisma.therapySession.findFirst>>) {
+function serializeSession(session: Awaited<ReturnType<typeof prisma.therapySession.findFirst>>, userKeyHex: string) {
   if (!session) return null;
   return {
     id: session.id,
     date: session.date,
     endDate: session.endDate,
     number: session.number,
-    topics: decryptStringArray(session.topics),
-    whatStoodOut: decryptText(session.whatStoodOut),
-    prepItems: decryptStringArray(session.prepItems),
+    topics: decryptUserStringArray(session.topics, userKeyHex),
+    whatStoodOut: decryptUserText(session.whatStoodOut, userKeyHex),
+    prepItems: decryptUserStringArray(session.prepItems, userKeyHex),
     postMood: session.postMood,
-    moodWord: decryptNullableText(session.moodWord),
+    moodWord: decryptNullableUserText(session.moodWord, userKeyHex),
     completed: session.completed,
     isCurrent: session.endDate === null,
     createdAt: session.createdAt,
@@ -48,11 +49,11 @@ function serializeSession(session: Awaited<ReturnType<typeof prisma.therapySessi
   };
 }
 
-function serializeHomeworkItem(item: Awaited<ReturnType<typeof prisma.homeworkItem.findFirst>>) {
+function serializeHomeworkItem(item: Awaited<ReturnType<typeof prisma.homeworkItem.findFirst>>, userKeyHex: string) {
   if (!item) return null;
   return {
     ...item,
-    text: decryptText(item.text),
+    text: decryptUserText(item.text, userKeyHex),
   };
 }
 
@@ -78,7 +79,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         orderBy: { date: "desc" },
       });
 
-      return res.status(200).json({ sessions: sessions.map(serializeSession) });
+      const userKeyHex = await getUserPrivateKeyHex(user.id);
+      return res.status(200).json({ sessions: sessions.map(s => serializeSession(s, userKeyHex)) });
     } catch (error) {
       return handleServerError(
         res,
@@ -108,6 +110,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const moodWord = body.moodWord?.trim() || null;
     const completed = body.completed ?? true;
 
+    const userKeyHex = await getUserPrivateKeyHex(user.id);
+
     if (action === "start") {
       try {
         const session = await prisma.$transaction(async tx => {
@@ -136,7 +140,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
               date,
               endDate: null,
               topics: [],
-              whatStoodOut: encryptText(""),
+              whatStoodOut: encryptUserText("", userKeyHex),
               prepItems: [],
               postMood: 5,
               moodWord: null,
@@ -146,7 +150,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
 
         return res.status(201).json({
-          session: serializeSession(session),
+          session: serializeSession(session, userKeyHex),
           homeworkItems: [],
           started: true,
         });
@@ -170,11 +174,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const updatedSession = await prisma.therapySession.update({
           where: { id: existing.id },
           data: {
-            topics: encryptStringArray(topics),
-            whatStoodOut: encryptText(whatStoodOut),
-            prepItems: encryptStringArray(prepItems),
+            topics: encryptUserStringArray(topics, userKeyHex),
+            whatStoodOut: encryptUserText(whatStoodOut, userKeyHex),
+            prepItems: encryptUserStringArray(prepItems, userKeyHex),
             postMood,
-            moodWord: moodWord ? encryptText(moodWord) : null,
+            moodWord: moodWord ? encryptUserText(moodWord, userKeyHex) : null,
             completed,
           },
         });
@@ -187,7 +191,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 data: {
                   userId: user.id,
                   sessionId: existing.id,
-                  text: encryptText(item.text!.trim()),
+                  text: encryptUserText(item.text!.trim(), userKeyHex),
                   sessionDate: existing.date,
                   dueDate: item.dueDate ? new Date(item.dueDate) : null,
                 },
@@ -196,8 +200,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         );
 
         return res.status(200).json({
-          session: serializeSession(updatedSession),
-          homeworkItems: createdHomework.map(serializeHomeworkItem),
+          session: serializeSession(updatedSession, userKeyHex),
+          homeworkItems: createdHomework.map(h => serializeHomeworkItem(h, userKeyHex)),
         });
       }
 
@@ -213,18 +217,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           number: nextNumber,
           date,
           endDate: null,
-          topics: encryptStringArray(topics),
-          whatStoodOut: encryptText(whatStoodOut),
-          prepItems: encryptStringArray(prepItems),
+          topics: encryptUserStringArray(topics, userKeyHex),
+          whatStoodOut: encryptUserText(whatStoodOut, userKeyHex),
+          prepItems: encryptUserStringArray(prepItems, userKeyHex),
           postMood,
-          moodWord: moodWord ? encryptText(moodWord) : null,
+          moodWord: moodWord ? encryptUserText(moodWord, userKeyHex) : null,
           completed,
           homework: {
             create: (body.homeworkItems ?? [])
               .filter(item => item.text?.trim())
               .map(item => ({
                 userId: user.id,
-                text: encryptText(item.text!.trim()),
+                text: encryptUserText(item.text!.trim(), userKeyHex),
                 sessionDate: date,
                 dueDate: item.dueDate ? new Date(item.dueDate) : null,
               })),
@@ -234,8 +238,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
 
       return res.status(201).json({
-        session: serializeSession(session),
-        homeworkItems: session.homework.map(serializeHomeworkItem),
+        session: serializeSession(session, userKeyHex),
+        homeworkItems: session.homework.map(h => serializeHomeworkItem(h, userKeyHex)),
       });
     } catch (error) {
       return handleServerError(

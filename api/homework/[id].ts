@@ -1,11 +1,12 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { decryptText, encryptText } from "../../lib/crypto.js";
+import { decryptUserText, encryptUserText } from "../../lib/crypto.js";
 import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
 import { requireUser } from "../../lib/require-user.js";
+import { getUserPrivateKeyHex } from "../../lib/users.js";
 
 function getId(req: VercelRequest) {
   const value = req.query.id;
@@ -13,11 +14,11 @@ function getId(req: VercelRequest) {
   return value;
 }
 
-function serializeHomeworkItem(item: Awaited<ReturnType<typeof prisma.homeworkItem.findFirst>>) {
+function serializeHomeworkItem(item: Awaited<ReturnType<typeof prisma.homeworkItem.findFirst>>, userKeyHex: string) {
   if (!item) return null;
   return {
     ...item,
-    text: decryptText(item.text),
+    text: decryptUserText(item.text, userKeyHex),
   };
 }
 
@@ -48,13 +49,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!existing) return res.status(404).json({ error: "Homework not found" });
 
   if (req.method === "PATCH") {
+    const userKeyHex = await getUserPrivateKeyHex(user.id);
     const body = (req.body ?? {}) as Record<string, unknown>;
     const data: Record<string, unknown> = {};
 
     if (typeof body.text === "string") {
       const text = body.text.trim();
       if (!text) return res.status(400).json({ error: "Homework text is required" });
-      data.text = encryptText(text);
+      data.text = encryptUserText(text, userKeyHex);
     }
     if (typeof body.completed === "boolean") {
       data.completed = body.completed;
@@ -75,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         where: { id: existing.id },
         data,
       });
-      return res.status(200).json({ homework: serializeHomeworkItem(updated) });
+      return res.status(200).json({ homework: serializeHomeworkItem(updated, userKeyHex) });
     } catch (error) {
       return handleServerError(
         res,

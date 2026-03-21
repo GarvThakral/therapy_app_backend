@@ -82,3 +82,74 @@ export function decryptStringArray(values: string[] | null | undefined) {
   if (!values || values.length === 0) return [];
   return values.map(value => decryptText(value));
 }
+
+// ============================================
+// User-Specific Encryption (Private Key)
+// ============================================
+
+export function generateUserPrivateKey(): string {
+  // Generate a distinct 32-byte private key for a user
+  return randomBytes(32).toString("hex");
+}
+
+export function encryptUserText(value: string, userKeyHex: string) {
+  const iv = randomBytes(IV_BYTES);
+  const key = Buffer.from(userKeyHex, "hex");
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  const payload = Buffer.concat([iv, authTag, encrypted]).toString("base64url");
+  return `${ENCRYPTION_PREFIX}${payload}`;
+}
+
+export function decryptUserText(value: string, userKeyHex: string) {
+  if (!isEncryptedValue(value)) {
+    return value;
+  }
+
+  const payload = value.slice(ENCRYPTION_PREFIX.length);
+
+  try {
+    const decoded = Buffer.from(payload, "base64url");
+    if (decoded.length <= IV_BYTES + AUTH_TAG_BYTES) {
+      throw new Error("Invalid encrypted payload");
+    }
+
+    const iv = decoded.subarray(0, IV_BYTES);
+    const authTag = decoded.subarray(IV_BYTES, IV_BYTES + AUTH_TAG_BYTES);
+    const encrypted = decoded.subarray(IV_BYTES + AUTH_TAG_BYTES);
+    const key = Buffer.from(userKeyHex, "hex");
+
+    const decipher = createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(authTag);
+
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+  } catch {
+    throw new Error("Failed to decrypt protected data");
+  }
+}
+
+export function encryptNullableUserText(value: string | null | undefined, userKeyHex: string) {
+  if (value === null || value === undefined) return null;
+  return encryptUserText(value, userKeyHex);
+}
+
+export function decryptNullableUserText(value: string | null | undefined, userKeyHex: string) {
+  if (value === null || value === undefined) return null;
+  return decryptUserText(value, userKeyHex);
+}
+
+export function encryptOptionalUserText(value: string | undefined, userKeyHex: string) {
+  if (value === undefined) return undefined;
+  return encryptUserText(value, userKeyHex);
+}
+
+export function encryptUserStringArray(values: string[] | null | undefined, userKeyHex: string) {
+  if (!values || values.length === 0) return [];
+  return values.map(value => encryptUserText(value, userKeyHex));
+}
+
+export function decryptUserStringArray(values: string[] | null | undefined, userKeyHex: string) {
+  if (!values || values.length === 0) return [];
+  return values.map(value => decryptUserText(value, userKeyHex));
+}

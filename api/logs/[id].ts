@@ -1,13 +1,14 @@
 import type { EntryType } from "@prisma/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { encryptText } from "../../lib/crypto.js";
+import { encryptUserText } from "../../lib/crypto.js";
 import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { serializeLogEntry } from "../../lib/logs.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
 import { requireUser } from "../../lib/require-user.js";
+import { getUserPrivateKeyHex } from "../../lib/users.js";
 
 interface UpdateLogBody {
   text?: string;
@@ -59,13 +60,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === "PATCH") {
+    const userKeyHex = await getUserPrivateKeyHex(user.id);
     const body = (req.body ?? {}) as UpdateLogBody;
     const data: Record<string, unknown> = {};
 
     if (typeof body.text === "string") {
       const text = body.text.trim();
       if (!text) return res.status(400).json({ error: "Text is required" });
-      data.text = encryptText(text);
+      data.text = encryptUserText(text, userKeyHex);
     }
     if (body.type) {
       if (!ALLOWED_TYPES.includes(body.type)) {
@@ -84,7 +86,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (body.prepNote === null) data.prepNote = null;
     if (typeof body.prepNote === "string") {
       const prepNote = body.prepNote.trim();
-      data.prepNote = prepNote ? encryptText(prepNote) : null;
+      data.prepNote = prepNote ? encryptUserText(prepNote, userKeyHex) : null;
     }
 
     try {
@@ -93,7 +95,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         data,
       });
 
-      return res.status(200).json({ log: serializeLogEntry(updated) });
+      return res.status(200).json({ log: serializeLogEntry(updated, userKeyHex) });
     } catch (error) {
       return handleServerError(
         res,
