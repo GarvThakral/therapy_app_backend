@@ -1,6 +1,13 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-import { decryptNullableText, decryptText, encryptText } from "../../lib/crypto.js";
+import {
+  decryptNullableText,
+  decryptStringArray,
+  decryptText,
+  encryptNullableText,
+  encryptStringArray,
+  encryptText,
+} from "../../lib/crypto.js";
 import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { prisma } from "../../lib/prisma.js";
@@ -12,7 +19,9 @@ function serializeProfile(profile: Awaited<ReturnType<typeof prisma.userProfile.
   return {
     id: profile.id,
     displayName: decryptText(profile.displayName),
+    referralSource: decryptNullableText(profile.referralSource),
     therapistName: decryptNullableText(profile.therapistName),
+    usageIntentions: decryptStringArray(profile.usageIntentions),
     sessionFrequency: profile.sessionFrequency,
     sessionDay: profile.sessionDay,
     sessionTime: profile.sessionTime,
@@ -75,9 +84,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (typeof body.displayName === "string") {
       data.displayName = encryptText(body.displayName.trim() || "Alex");
     }
+    if (typeof body.referralSource === "string") {
+      const referralSource = body.referralSource.trim();
+      data.referralSource = encryptNullableText(referralSource || null);
+    }
+    if (body.referralSource === null) data.referralSource = null;
     if (typeof body.therapistName === "string") {
       const therapistName = body.therapistName.trim();
-      data.therapistName = therapistName ? encryptText(therapistName) : null;
+      data.therapistName = encryptNullableText(therapistName || null);
+    }
+    if (body.therapistName === null) data.therapistName = null;
+    if (Array.isArray(body.usageIntentions)) {
+      const intentions = body.usageIntentions
+        .filter((value): value is string => typeof value === "string")
+        .map(value => value.trim())
+        .filter(Boolean);
+      data.usageIntentions = encryptStringArray(intentions);
     }
     if (typeof body.sessionFrequency === "string") data.sessionFrequency = body.sessionFrequency;
     if (typeof body.sessionDay === "string") data.sessionDay = body.sessionDay;

@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 import { signToken } from "../../lib/auth.js";
+import { encryptText } from "../../lib/crypto.js";
 import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { hashPassword } from "../../lib/password.js";
@@ -44,11 +45,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const passwordHash = await hashPassword(password);
+    const defaultDisplayName = name || email.split("@")[0] || "Alex";
     const user = await prisma.user.create({
       data: {
         email,
         name,
         passwordHash,
+        profile: {
+          create: {
+            displayName: encryptText(defaultDisplayName),
+            onboarded: false,
+          },
+        },
       },
     });
 

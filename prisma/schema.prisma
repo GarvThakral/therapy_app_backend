@@ -70,7 +70,9 @@ model UserProfile {
   userId                 String   @unique
   user                   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   displayName            String   @default("Alex")
+  referralSource         String?
   therapistName          String?
+  usageIntentions        String[] @default([])
   sessionFrequency       String   @default("weekly")
   sessionDay             String   @default("Thursday")
   sessionTime            String   @default("10:00")

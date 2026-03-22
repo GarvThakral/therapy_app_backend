@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { randomBytes } from "node:crypto";
 
 import { signToken } from "../../lib/auth.js";
+import { encryptText } from "../../lib/crypto.js";
 import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { hashPassword, verifyPassword } from "../../lib/password.js";
@@ -216,11 +217,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (!user) {
           const randomPassword = randomBytes(24).toString("hex");
           const passwordHash = await hashPassword(randomPassword);
+          const defaultDisplayName = name || email.split("@")[0] || "Alex";
           user = await prisma.user.create({
             data: {
               email,
               name,
               passwordHash,
+              profile: {
+                create: {
+                  displayName: encryptText(defaultDisplayName),
+                  onboarded: false,
+                },
+              },
             },
           });
         } else if (!user.name && name) {
