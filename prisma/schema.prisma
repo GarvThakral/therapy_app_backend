@@ -33,6 +33,7 @@ model User {
   plan                 Plan                  @default(FREE)
   proUntil             DateTime?
   privateKey           String?
+  launchPromoGrant     LaunchPromoGrant?
   logs                 LogEntry[]
   sessions             TherapySession[]
   homework             HomeworkItem[]
@@ -44,6 +45,19 @@ model User {
   communityReports     CommunityReport[]
   createdAt            DateTime              @default(now())
   updatedAt            DateTime              @updatedAt
+}
+
+model LaunchPromoGrant {
+  id          String   @id @default(cuid())
+  campaign    String
+  email       String
+  grantedPlan Plan     @default(PRO)
+  userId      String?  @unique
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@unique([campaign, email])
+  @@index([campaign, createdAt])
 }
 
 model LogEntry {

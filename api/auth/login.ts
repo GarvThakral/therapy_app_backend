@@ -6,6 +6,7 @@ import { encryptText } from "../../lib/crypto.js";
 import { handleServerError } from "../../lib/errors.js";
 import { applyCors, handleOptions } from "../../lib/http.js";
 import { hashPassword, verifyPassword } from "../../lib/password.js";
+import { createUserWithLaunchPromo } from "../../lib/launch-promo.js";
 import { prisma } from "../../lib/prisma.js";
 import { applyRateLimit } from "../../lib/rate-limit.js";
 import { toPublicUser } from "../../lib/users.js";
@@ -218,18 +219,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           const randomPassword = randomBytes(24).toString("hex");
           const passwordHash = await hashPassword(randomPassword);
           const defaultDisplayName = name || email.split("@")[0] || "Alex";
-          user = await prisma.user.create({
-            data: {
-              email,
-              name,
-              passwordHash,
-              profile: {
-                create: {
-                  displayName: encryptText(defaultDisplayName),
-                  onboarded: false,
-                },
-              },
-            },
+          user = await createUserWithLaunchPromo({
+            email,
+            name,
+            passwordHash,
+            displayName: defaultDisplayName,
+            encryptDisplayName: encryptText,
           });
         } else if (!user.name && name) {
           user = await prisma.user.update({

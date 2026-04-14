@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "User"
+ADD COLUMN IF NOT EXISTS "privateKey" TEXT,
+ADD COLUMN IF NOT EXISTS "proUntil" TIMESTAMP(3);
