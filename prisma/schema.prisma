@@ -229,3 +229,16 @@ model CommunityReport {
   @@index([commentId, createdAt])
   @@index([status, createdAt])
 }
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String?
+  email     String
+  topic     String   @default("General question")
+  message   String
+  userId    String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([email, createdAt])
+}
